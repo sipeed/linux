@@ -121,6 +121,7 @@ struct sun4i_usb_phy_cfg {
 	bool dedicated_clocks;
 	bool phy0_dual_route;
 	bool needs_phy2_siddq;
+	bool is_28nm;
 	int missing_phys;
 };
 
@@ -340,8 +341,7 @@ static int sun4i_usb_phy_init(struct phy *_phy)
 		writel(val, phy->pmu + REG_HCI_PHY_CTL);
 	}
 
-	if (data->cfg->type == sun8i_a83t_phy ||
-	    data->cfg->type == sun50i_h6_phy) {
+	if (data->cfg->is_28nm) {
 		if (phy->index == 0) {
 			val = readl(data->base + data->cfg->phyctl_offset);
 			val |= PHY_CTL_VBUSVLDEXT;
@@ -385,8 +385,7 @@ static int sun4i_usb_phy_exit(struct phy *_phy)
 	struct sun4i_usb_phy_data *data = to_sun4i_usb_phy_data(phy);
 
 	if (phy->index == 0) {
-		if (data->cfg->type == sun8i_a83t_phy ||
-		    data->cfg->type == sun50i_h6_phy) {
+		if (data->cfg->is_28nm) {
 			void __iomem *phyctl = data->base +
 				data->cfg->phyctl_offset;
 
@@ -972,6 +971,7 @@ static const struct sun4i_usb_phy_cfg sun8i_a83t_cfg = {
 	.type = sun8i_a83t_phy,
 	.phyctl_offset = REG_PHYCTL_A33,
 	.dedicated_clocks = true,
+	.is_28nm = true,
 };
 
 static const struct sun4i_usb_phy_cfg sun8i_h3_cfg = {
@@ -1021,6 +1021,7 @@ static const struct sun4i_usb_phy_cfg sun50i_h6_cfg = {
 	.phyctl_offset = REG_PHYCTL_A33,
 	.dedicated_clocks = true,
 	.phy0_dual_route = true,
+	.is_28nm = true,
 	.missing_phys = BIT(1) | BIT(2),
 };
 
@@ -1033,6 +1034,7 @@ static const struct sun4i_usb_phy_cfg sun50i_h616_cfg = {
 	.phy0_dual_route = true,
 	.hci_phy_ctl_clear = PHY_CTL_SIDDQ,
 	.needs_phy2_siddq = true,
+	.is_28nm = true,
 };
 
 static const struct of_device_id sun4i_usb_phy_of_match[] = {
