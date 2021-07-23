@@ -45,6 +45,8 @@ properties:
       - allwinner,sun50i-h6-r-ccu
       - allwinner,sun50i-h616-ccu
       - allwinner,sun50i-h616-r-ccu
+      - allwinner,sun50i-r329-ccu
+      - allwinner,sun50i-r329-r-ccu
       - allwinner,suniv-f1c100s-ccu
       - nextthing,gr8-ccu
 
@@ -106,6 +108,7 @@ else:
           - allwinner,sun50i-a100-ccu
           - allwinner,sun50i-h6-ccu
           - allwinner,sun50i-h616-ccu
+          - allwinner,sun50i-r329-r-ccu
 
   then:
     properties:
@@ -118,14 +121,57 @@ else:
         maxItems: 3
 
   else:
-    properties:
-      clocks:
-        minItems: 2
-        maxItems: 2
+    if:
+      properties:
+        compatible:
+          const: allwinner,sun50i-r329-ccu
+    then:
+      properties:
+        clocks:
+          minItems: 13
+          maxItems: 13
+          items:
+            - description: High Frequency Oscillator (usually at 24MHz)
+            - description: Low Frequency Oscillator (usually at 32kHz)
+            - description: Internal Oscillator
+            - description: CPUX PLL
+            - description: Peripherals PLL
+            - description: Peripherals PLL (2x)
+            - description: Peripherals PLL derivated 800MHz clock
+            - description: Audio PLL 0
+            - description: Audio PLL 0 (/2)
+            - description: Audio PLL 0 (/5)
+            - description: Audio PLL 1
+            - description: Audio PLL 1 (2x)
+            - description: Audio PLL 1 (4x)
 
-      clock-names:
-        minItems: 2
-        maxItems: 2
+        clock-names:
+          minItems: 13
+          maxItems: 13
+          items:
+            - const: hosc
+            - const: losc
+            - const: iosc
+            - const: pll-cpux
+            - const: pll-periph
+            - const: pll-periph-2x
+            - const: pll-periph-800m
+            - const: pll-audio0
+            - const: pll-audio0-div2
+            - const: pll-audio0-div5
+            - const: pll-audio1
+            - const: pll-audio1-2x
+            - const: pll-audio1-4x
+
+    else:
+      properties:
+        clocks:
+          minItems: 2
+          maxItems: 2
+
+        clock-names:
+          minItems: 2
+          maxItems: 2
 
 additionalProperties: false
 
