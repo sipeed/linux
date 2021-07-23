@@ -449,6 +449,12 @@ properties:
           - const: haoyu,a20-marsboard
           - const: allwinner,sun7i-a20
 
+      - description: Sipeed MaixSense
+        items:
+          - const: sipeed,maixsense
+          - const: sipeed,maix-iia
+          - const: allwinner,sun50i-r329
+
       - description: MapleBoard MP130
         items:
           - const: mapleboard,mp130
