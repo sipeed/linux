@@ -21,6 +21,8 @@ properties:
     oneOf:
       - const: allwinner,sun6i-a31-spi
       - const: allwinner,sun8i-h3-spi
+      - const: allwinner,sun50i-r329-spi
+      - const: allwinner,sun50i-r329-spi-dbi
       - items:
           - enum:
               - allwinner,sun8i-r40-spi
