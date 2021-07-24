@@ -123,6 +123,8 @@ patternProperties:
     description: ARM Ltd.
   "^armadeus,.*":
     description: ARMadeus Systems SARL
+  "^armchina,.*":
+    description: ARM China Ltd.
   "^arrow,.*":
     description: Arrow Electronics
   "^artesyn,.*":
