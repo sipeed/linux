@@ -210,6 +210,18 @@
 			#interrupt-cells = <3>;
 		};
 
+		aipu: aipu@3050000 {
+			compatible = "allwinner,sun50i-r329-aipu",
+				     "armchina,zhouyi-v1";
+			reg = <0x03050000 0x800>;
+			interrupts = <GIC_SPI 65 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_AIPU>, <&ccu CLK_BUS_AIPU>, <&ccu CLK_MBUS_AIPU>;
+			clock-names = "core", "bus", "mbus";
+			resets = <&ccu RST_BUS_AIPU>;
+			assigned-clocks = <&ccu CLK_AIPU>;
+			assigned-clock-rates = <600000000>;
+		};
+
 		mmc0: mmc@4020000 {
 			compatible = "allwinner,sun50i-r329-mmc";
 			reg = <0x04020000 0x1000>;
