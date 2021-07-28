@@ -22,6 +22,7 @@ properties:
       - allwinner,sun8i-a23-codec
       - allwinner,sun8i-h3-codec
       - allwinner,sun8i-v3s-codec
+      - allwinner,sun50i-r329-codec
 
   reg:
     maxItems: 1
@@ -29,15 +30,9 @@ properties:
   interrupts:
     maxItems: 1
 
-  clocks:
-    items:
-      - description: Bus Clock
-      - description: Module Clock
+  clocks: true
 
-  clock-names:
-    items:
-      - const: apb
-      - const: codec
+  clock-names: true
 
   dmas:
     items:
@@ -70,6 +65,10 @@ properties:
         - MIC1
         - MIC2
         - MIC3
+        - MIC4
+        - MIC5
+        - SPKL
+        - SPKR
 
         # Microphone Biases from the SoC
         - HBIAS
@@ -102,6 +101,49 @@ required:
   - dma-names
 
 allOf:
+  - if:
+      properties:
+        compatible:
+          enum:
+            - allwinner,sun4i-a10-codec
+            - allwinner,sun6i-a31-codec
+            - allwinner,sun7i-a20-codec
+            - allwinner,sun8i-a23-codec
+            - allwinner,sun8i-h3-codec
+            - allwinner,sun8i-v3s-codec
+
+    then:
+      properties:
+        clocks:
+          items:
+            - description: Bus Clock
+            - description: Module Clock
+
+        clock-names:
+          items:
+            - const: apb
+            - const: codec
+
+  - if:
+      properties:
+        compatible:
+          enum:
+            - allwinner,sun50i-r329-codec
+
+    then:
+      properties:
+        clocks:
+          items:
+            - description: Bus Clock
+            - description: ADC Module Clock
+            - description: DAC Module Clock
+
+        clock-names:
+          items:
+            - const: apb
+            - const: adc
+            - const: dac
+
   - if:
       properties:
         compatible:
@@ -225,6 +267,28 @@ allOf:
               - Headset Mic
               - Line In
               - Line Out
+              - Mic
+              - Speaker
+
+  - if:
+      properties:
+        compatible:
+          enum:
+            - allwinner,sun50i-r329-codec
+
+    then:
+      properties:
+        allwinner,audio-routing:
+          items:
+            enum:
+              - SPKL
+              - SPKR
+              - MIC1
+              - MIC2
+              - MIC3
+              - MIC4
+              - MIC5
+              - MBIAS
               - Mic
               - Speaker
 
