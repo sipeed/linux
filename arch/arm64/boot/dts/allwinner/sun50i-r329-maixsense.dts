@@ -20,6 +20,20 @@
 	};
 };
 
+&codec {
+	status = "okay";
+	allwinner,audio-routing =
+		"Speaker", "SPKL",
+		"MIC1", "Mic",
+		"MIC2", "Mic",
+		"Mic", "MBIAS",
+		"Mic", "MBIAS";
+};
+
+&codec_analog {
+	status = "okay";
+};
+
 &ehci0 {
 	status = "okay";
 };
