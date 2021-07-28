@@ -19,6 +19,7 @@
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
+#include <linux/of_reserved_mem.h>
 #include <linux/clk.h>
 #include <linux/regmap.h>
 #include <linux/reset.h>
@@ -232,16 +233,55 @@
 
 /* TODO H3 DAP (Digital Audio Processing) bits */
 
+/* Nearly everything moved on R329 */
+#define SUN50I_R329_CODEC_DAC_FIFOC		(0x10)
+#define SUN50I_R329_CODEC_ADC_FIFOC		(0x30)
+#define SUN50I_R329_CODEC_ADC_FIFOC_ADC_DRQ_EN		(3)
+#define SUN50I_R329_CODEC_ADC_FIFOC_RX_TRIG_LEVEL	(4)
+#define SUN50I_R329_CODEC_ADC_FIFOC_RX_SAMPLE_BITS	(16)
+#define SUN50I_R329_CODEC_ADC_VOL_CTRL1		(0x34)
+#define SUN50I_R329_CODEC_ADC_VOL_CTRL2		(0x3c)
+#define SUN50I_R329_CODEC_ADC_RXDATA		(0x40)
+#define SUN50I_R329_CODEC_ADC_DIG_CTRL		(0x50)
+#define SUN50I_R329_CODEC_VRA1SPEEDUP_DOWN_CTRL	(0x54)
+
+/* TODO R329 DAP (Digital Audio Processing) bits */
+
+struct sun4i_codec;
+
+struct sun4i_codec_quirks {
+	const struct regmap_config *regmap_config;
+	const struct snd_soc_component_driver *codec;
+	struct snd_soc_card * (*create_card)(struct device *dev);
+	/*
+	 * In the order of reg_dac_fifoc, reg_adc_fifoc, adc_fifoc_drq_en,
+	 * adc_fifoc_trig_level and adc_fifoc_sample_bits.
+	 */
+	struct reg_field reg_fields[5];
+	unsigned int reg_dac_txdata;	/* TX FIFO offset for DMA config */
+	unsigned int reg_adc_rxdata;	/* RX FIFO offset for DMA config */
+	bool has_reset;
+	bool has_dual_module_clock;
+
+	void (*set_capture_channel_mask)(struct sun4i_codec *scodec, u8 mask);
+};
+
 struct sun4i_codec {
 	struct device	*dev;
 	struct regmap	*regmap;
 	struct clk	*clk_apb;
-	struct clk	*clk_module;
+	struct clk	*clk_module; /* for ADC if 2 module clocks */
+	struct clk	*clk_module_dac;
 	struct reset_control *rst;
 	struct gpio_desc *gpio_pa;
+	const struct sun4i_codec_quirks *quirks;
 
-	/* ADC_FIFOC register is at different offset on different SoCs */
+	struct regmap_field *reg_dac_fifoc;
 	struct regmap_field *reg_adc_fifoc;
+
+	struct regmap_field *adc_fifoc_drq_en;
+	struct regmap_field *adc_fifoc_trig_level;
+	struct regmap_field *adc_fifoc_sample_bits;
 
 	struct snd_dmaengine_dai_dma_data	capture_dma_data;
 	struct snd_dmaengine_dai_dma_data	playback_dma_data;
@@ -250,37 +290,34 @@ struct sun4i_codec {
 static void sun4i_codec_start_playback(struct sun4i_codec *scodec)
 {
 	/* Flush TX FIFO */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH),
-			   BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH));
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH),
+				 BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH));
 
 	/* Enable DAC DRQ */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN),
-			   BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN));
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN),
+				 BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN));
 }
 
 static void sun4i_codec_stop_playback(struct sun4i_codec *scodec)
 {
 	/* Disable DAC DRQ */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN),
-			   0);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_DAC_DRQ_EN),
+				 0);
 }
 
 static void sun4i_codec_start_capture(struct sun4i_codec *scodec)
 {
 	/* Enable ADC DRQ */
-	regmap_field_update_bits(scodec->reg_adc_fifoc,
-				 BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
-				 BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN));
+	regmap_field_write(scodec->adc_fifoc_drq_en, 1);
 }
 
 static void sun4i_codec_stop_capture(struct sun4i_codec *scodec)
 {
 	/* Disable ADC DRQ */
-	regmap_field_update_bits(scodec->reg_adc_fifoc,
-				 BIT(SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN), 0);
+	regmap_field_write(scodec->adc_fifoc_drq_en, 0);
 }
 
 static int sun4i_codec_trigger(struct snd_pcm_substream *substream, int cmd,
@@ -329,9 +366,7 @@ static int sun4i_codec_prepare_capture(struct snd_pcm_substream *substream,
 
 
 	/* Set RX FIFO trigger level */
-	regmap_field_update_bits(scodec->reg_adc_fifoc,
-				 0xf << SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
-				 0x7 << SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL);
+	regmap_field_write(scodec->adc_fifoc_trig_level, 0xf);
 
 	/*
 	 * FIXME: Undocumented in the datasheet, but
@@ -365,14 +400,14 @@ static int sun4i_codec_prepare_playback(struct snd_pcm_substream *substream,
 	u32 val;
 
 	/* Flush the TX FIFO */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH),
-			   BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH));
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH),
+				 BIT(SUN4I_CODEC_DAC_FIFOC_FIFO_FLUSH));
 
 	/* Set TX FIFO Empty Trigger Level */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   0x3f << SUN4I_CODEC_DAC_FIFOC_TX_TRIG_LEVEL,
-			   0xf << SUN4I_CODEC_DAC_FIFOC_TX_TRIG_LEVEL);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 0x3f << SUN4I_CODEC_DAC_FIFOC_TX_TRIG_LEVEL,
+				 0xf << SUN4I_CODEC_DAC_FIFOC_TX_TRIG_LEVEL);
 
 	if (substream->runtime->rate > 32000)
 		/* Use 64 bits FIR filter */
@@ -381,14 +416,14 @@ static int sun4i_codec_prepare_playback(struct snd_pcm_substream *substream,
 		/* Use 32 bits FIR filter */
 		val = BIT(SUN4I_CODEC_DAC_FIFOC_FIR_VERSION);
 
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_FIR_VERSION),
-			   val);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_FIR_VERSION),
+				 val);
 
 	/* Send zeros when we have an underrun */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   BIT(SUN4I_CODEC_DAC_FIFOC_SEND_LASAT),
-			   0);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 BIT(SUN4I_CODEC_DAC_FIFOC_SEND_LASAT),
+				 0);
 
 	return 0;
 };
@@ -405,7 +440,6 @@ static int sun4i_codec_prepare(struct snd_pcm_substream *substream,
 static unsigned long sun4i_codec_get_mod_freq(struct snd_pcm_hw_params *params)
 {
 	unsigned int rate = params_rate(params);
-
 	switch (rate) {
 	case 176400:
 	case 88200:
@@ -483,21 +517,14 @@ static int sun4i_codec_hw_params_capture(struct sun4i_codec *scodec,
 				 7 << SUN4I_CODEC_ADC_FIFOC_ADC_FS,
 				 hwrate << SUN4I_CODEC_ADC_FIFOC_ADC_FS);
 
-	/* Set the number of channels we want to use */
 	if (params_channels(params) == 1)
-		regmap_field_update_bits(scodec->reg_adc_fifoc,
-					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN),
-					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN));
+		scodec->quirks->set_capture_channel_mask(scodec, 0x1);
 	else
-		regmap_field_update_bits(scodec->reg_adc_fifoc,
-					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN),
-					 0);
+		scodec->quirks->set_capture_channel_mask(scodec, 0x3);
 
 	/* Set the number of sample bits to either 16 or 24 bits */
 	if (hw_param_interval(params, SNDRV_PCM_HW_PARAM_SAMPLE_BITS)->min == 32) {
-		regmap_field_update_bits(scodec->reg_adc_fifoc,
-				   BIT(SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
-				   BIT(SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS));
+		regmap_field_write(scodec->adc_fifoc_sample_bits, 1);
 
 		regmap_field_update_bits(scodec->reg_adc_fifoc,
 				   BIT(SUN4I_CODEC_ADC_FIFOC_RX_FIFO_MODE),
@@ -505,9 +532,7 @@ static int sun4i_codec_hw_params_capture(struct sun4i_codec *scodec,
 
 		scodec->capture_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	} else {
-		regmap_field_update_bits(scodec->reg_adc_fifoc,
-				   BIT(SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
-				   0);
+		regmap_field_write(scodec->adc_fifoc_sample_bits, 0);
 
 		/* Fill most significant bits with valid data MSB */
 		regmap_field_update_bits(scodec->reg_adc_fifoc,
@@ -527,9 +552,9 @@ static int sun4i_codec_hw_params_playback(struct sun4i_codec *scodec,
 	u32 val;
 
 	/* Set DAC sample rate */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   7 << SUN4I_CODEC_DAC_FIFOC_DAC_FS,
-			   hwrate << SUN4I_CODEC_DAC_FIFOC_DAC_FS);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 7 << SUN4I_CODEC_DAC_FIFOC_DAC_FS,
+				 hwrate << SUN4I_CODEC_DAC_FIFOC_DAC_FS);
 
 	/* Set the number of channels we want to use */
 	if (params_channels(params) == 1)
@@ -537,31 +562,31 @@ static int sun4i_codec_hw_params_playback(struct sun4i_codec *scodec,
 	else
 		val = 0;
 
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
 			   BIT(SUN4I_CODEC_DAC_FIFOC_MONO_EN),
 			   val);
 
 	/* Set the number of sample bits to either 16 or 24 bits */
 	if (hw_param_interval(params, SNDRV_PCM_HW_PARAM_SAMPLE_BITS)->min == 32) {
-		regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS),
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS));
+		regmap_field_update_bits(scodec->reg_dac_fifoc,
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS),
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS));
 
 		/* Set TX FIFO mode to padding the LSBs with 0 */
-		regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE),
-				   0);
+		regmap_field_update_bits(scodec->reg_dac_fifoc,
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE),
+					 0);
 
 		scodec->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	} else {
-		regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS),
-				   0);
+		regmap_field_update_bits(scodec->reg_dac_fifoc,
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_SAMPLE_BITS),
+					 0);
 
 		/* Set TX FIFO mode to repeat the MSB */
-		regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE),
-				   BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE));
+		regmap_field_update_bits(scodec->reg_dac_fifoc,
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE),
+					 BIT(SUN4I_CODEC_DAC_FIFOC_TX_FIFO_MODE));
 
 		scodec->playback_dma_data.addr_width = DMA_SLAVE_BUSWIDTH_2_BYTES;
 	}
@@ -582,7 +607,11 @@ static int sun4i_codec_hw_params(struct snd_pcm_substream *substream,
 	if (!clk_freq)
 		return -EINVAL;
 
-	ret = clk_set_rate(scodec->clk_module, clk_freq);
+	if (scodec->clk_module_dac &&
+	    substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		ret = clk_set_rate(scodec->clk_module_dac, clk_freq);
+	else
+		ret = clk_set_rate(scodec->clk_module, clk_freq);
 	if (ret)
 		return ret;
 
@@ -624,11 +653,15 @@ static int sun4i_codec_startup(struct snd_pcm_substream *substream,
 	 * Stop issuing DRQ when we have room for less than 16 samples
 	 * in our TX FIFO
 	 */
-	regmap_update_bits(scodec->regmap, SUN4I_CODEC_DAC_FIFOC,
-			   3 << SUN4I_CODEC_DAC_FIFOC_DRQ_CLR_CNT,
-			   3 << SUN4I_CODEC_DAC_FIFOC_DRQ_CLR_CNT);
+	regmap_field_update_bits(scodec->reg_dac_fifoc,
+				 3 << SUN4I_CODEC_DAC_FIFOC_DRQ_CLR_CNT,
+				 3 << SUN4I_CODEC_DAC_FIFOC_DRQ_CLR_CNT);
 
-	return clk_prepare_enable(scodec->clk_module);
+	if (scodec->clk_module_dac &&
+	    substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		return clk_prepare_enable(scodec->clk_module_dac);
+	else
+		return clk_prepare_enable(scodec->clk_module);
 }
 
 static void sun4i_codec_shutdown(struct snd_pcm_substream *substream,
@@ -637,7 +670,11 @@ static void sun4i_codec_shutdown(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
 	struct sun4i_codec *scodec = snd_soc_card_get_drvdata(rtd->card);
 
-	clk_disable_unprepare(scodec->clk_module);
+	if (scodec->clk_module_dac &&
+	    substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+		clk_disable_unprepare(scodec->clk_module_dac);
+	else
+		clk_disable_unprepare(scodec->clk_module);
 }
 
 static const struct snd_soc_dai_ops sun4i_codec_dai_ops = {
@@ -1175,6 +1212,7 @@ static const struct snd_soc_dapm_route sun6i_codec_codec_dapm_routes[] = {
 
 	/* Left ADC Mixer Routes */
 	{ "Left ADC Mixer", "Mixer Capture Switch", "Left Mixer" },
+
 	{ "Left ADC Mixer", "Mixer Reversed Capture Switch", "Right Mixer" },
 	{ "Left ADC Mixer", "Line In Capture Switch", "LINEIN" },
 	{ "Left ADC Mixer", "Mic1 Capture Switch", "Mic1 Amplifier" },
@@ -1245,6 +1283,40 @@ static const struct snd_soc_component_driver sun8i_a23_codec_codec = {
 	.num_controls		= ARRAY_SIZE(sun8i_a23_codec_codec_controls),
 	.dapm_widgets		= sun8i_a23_codec_codec_widgets,
 	.num_dapm_widgets	= ARRAY_SIZE(sun8i_a23_codec_codec_widgets),
+	.idle_bias_on		= 1,
+	.use_pmdown_time	= 1,
+	.endianness		= 1,
+	.non_legacy_dai_naming	= 1,
+};
+
+/* sun50i R329 codec */
+static const DECLARE_TLV_DB_SCALE(sun50i_r329_codec_dvol_scale, -12000, 75, 1);
+static const struct snd_kcontrol_new sun50i_r329_codec_codec_controls[] = {
+	SOC_SINGLE_TLV("DAC Playback Volume", SUN4I_CODEC_DAC_DPC,
+		       SUN4I_CODEC_DAC_DPC_DVOL, 0x3f, 1,
+		       sun6i_codec_dvol_scale),
+	/* TODO: An extra digital playback volume register */
+	SOC_SINGLE_TLV("Left ADC Capture Volume", SUN50I_R329_CODEC_ADC_VOL_CTRL1,
+		       0, 0xff, 0, sun50i_r329_codec_dvol_scale),
+	SOC_SINGLE_TLV("Right ADC Capture Volume", SUN50I_R329_CODEC_ADC_VOL_CTRL1,
+		       8, 0xff, 0, sun50i_r329_codec_dvol_scale),
+	/* TODO: extra ADC channels */
+};
+
+static const struct snd_soc_dapm_widget sun50i_r329_codec_codec_widgets[] = {
+	/* Digital parts of the DACs */
+	SND_SOC_DAPM_SUPPLY("DAC Enable", SUN4I_CODEC_DAC_DPC,
+			    SUN4I_CODEC_DAC_DPC_EN_DA, 0, NULL, 0),
+	/* Digital parts of the ADCs */
+	SND_SOC_DAPM_SUPPLY("ADC Enable", SUN50I_R329_CODEC_ADC_FIFOC,
+			    SUN6I_CODEC_ADC_FIFOC_EN_AD, 0, NULL, 0),
+};
+
+static const struct snd_soc_component_driver sun50i_r329_codec_codec = {
+	.controls		= sun50i_r329_codec_codec_controls,
+	.num_controls		= ARRAY_SIZE(sun50i_r329_codec_codec_controls),
+	.dapm_widgets		= sun50i_r329_codec_codec_widgets,
+	.num_dapm_widgets	= ARRAY_SIZE(sun50i_r329_codec_codec_widgets),
 	.idle_bias_on		= 1,
 	.use_pmdown_time	= 1,
 	.endianness		= 1,
@@ -1546,6 +1618,45 @@ static struct snd_soc_card *sun8i_v3s_codec_create_card(struct device *dev)
 	return card;
 };
 
+static struct snd_soc_card *sun50i_r329_codec_create_card(struct device *dev)
+{
+	struct snd_soc_card *card;
+	int ret;
+
+	card = devm_kzalloc(dev, sizeof(*card), GFP_KERNEL);
+	if (!card)
+		return ERR_PTR(-ENOMEM);
+
+	aux_dev.dlc.of_node = of_parse_phandle(dev->of_node,
+						 "allwinner,codec-analog-controls",
+						 0);
+	if (!aux_dev.dlc.of_node) {
+		dev_err(dev, "Can't find analog controls for codec.\n");
+		return ERR_PTR(-EINVAL);
+	}
+
+	card->dai_link = sun4i_codec_create_link(dev, &card->num_links);
+	if (!card->dai_link)
+		return ERR_PTR(-ENOMEM);
+
+	card->dev		= dev;
+	card->owner		= THIS_MODULE;
+	card->name		= "R329 Audio Codec";
+	card->dapm_widgets	= sun6i_codec_card_dapm_widgets;
+	card->num_dapm_widgets	= ARRAY_SIZE(sun6i_codec_card_dapm_widgets);
+	card->dapm_routes	= sun8i_codec_card_routes;
+	card->num_dapm_routes	= ARRAY_SIZE(sun8i_codec_card_routes);
+	card->aux_dev		= &aux_dev;
+	card->num_aux_devs	= 1;
+	card->fully_routed	= true;
+
+	ret = snd_soc_of_parse_audio_routing(card, "allwinner,audio-routing");
+	if (ret)
+		dev_warn(dev, "failed to parse audio-routing: %d\n", ret);
+
+	return card;
+};
+
 static const struct regmap_config sun4i_codec_regmap_config = {
 	.reg_bits	= 32,
 	.reg_stride	= 4,
@@ -1588,32 +1699,74 @@ static const struct regmap_config sun8i_v3s_codec_regmap_config = {
 	.max_register	= SUN8I_H3_CODEC_ADC_DBG,
 };
 
-struct sun4i_codec_quirks {
-	const struct regmap_config *regmap_config;
-	const struct snd_soc_component_driver *codec;
-	struct snd_soc_card * (*create_card)(struct device *dev);
-	struct reg_field reg_adc_fifoc;	/* used for regmap_field */
-	unsigned int reg_dac_txdata;	/* TX FIFO offset for DMA config */
-	unsigned int reg_adc_rxdata;	/* RX FIFO offset for DMA config */
-	bool has_reset;
+static const struct regmap_config sun50i_r329_codec_regmap_config = {
+	.reg_bits	= 32,
+	.reg_stride	= 4,
+	.val_bits	= 32,
+	.max_register	= SUN50I_R329_CODEC_VRA1SPEEDUP_DOWN_CTRL,
 };
+
+void sun4i_codec_set_capture_channel_mask(struct sun4i_codec *scodec, u8 mask)
+{
+	if (mask == 0x1)
+		regmap_field_update_bits(scodec->reg_adc_fifoc,
+					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN),
+					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN));
+	else
+		regmap_field_update_bits(scodec->reg_adc_fifoc,
+					 BIT(SUN4I_CODEC_ADC_FIFOC_MONO_EN),
+					 0);
+
+}
+
+void sun50i_r329_codec_set_capture_channel_mask(struct sun4i_codec *scodec,
+					        u8 mask)
+{
+	regmap_write(scodec->regmap, SUN50I_R329_CODEC_ADC_DIG_CTRL, mask);
+}
 
 static const struct sun4i_codec_quirks sun4i_codec_quirks = {
 	.regmap_config	= &sun4i_codec_regmap_config,
 	.codec		= &sun4i_codec_codec,
 	.create_card	= sun4i_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN4I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN4I_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN4I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 };
 
 static const struct sun4i_codec_quirks sun6i_a31_codec_quirks = {
 	.regmap_config	= &sun6i_codec_regmap_config,
 	.codec		= &sun6i_codec_codec,
 	.create_card	= sun6i_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN4I_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN6I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 	.has_reset	= true,
 };
 
@@ -1621,18 +1774,44 @@ static const struct sun4i_codec_quirks sun7i_codec_quirks = {
 	.regmap_config	= &sun7i_codec_regmap_config,
 	.codec		= &sun7i_codec_codec,
 	.create_card	= sun4i_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN4I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN4I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN4I_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN4I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 };
 
 static const struct sun4i_codec_quirks sun8i_a23_codec_quirks = {
 	.regmap_config	= &sun8i_a23_codec_regmap_config,
 	.codec		= &sun8i_a23_codec_codec,
 	.create_card	= sun8i_a23_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN4I_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN6I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 	.has_reset	= true,
 };
 
@@ -1645,9 +1824,22 @@ static const struct sun4i_codec_quirks sun8i_h3_codec_quirks = {
 	 */
 	.codec		= &sun8i_a23_codec_codec,
 	.create_card	= sun8i_h3_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN8I_H3_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN6I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 	.has_reset	= true,
 };
 
@@ -1659,10 +1851,47 @@ static const struct sun4i_codec_quirks sun8i_v3s_codec_quirks = {
 	 */
 	.codec		= &sun8i_a23_codec_codec,
 	.create_card	= sun8i_v3s_codec_create_card,
-	.reg_adc_fifoc	= REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+	.reg_fields	= {
+		REG_FIELD(SUN4I_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN4I_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN4I_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 3),
+		REG_FIELD(SUN6I_CODEC_ADC_FIFOC,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN4I_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
 	.reg_dac_txdata	= SUN8I_H3_CODEC_DAC_TXDATA,
 	.reg_adc_rxdata	= SUN6I_CODEC_ADC_RXDATA,
+	.set_capture_channel_mask = sun4i_codec_set_capture_channel_mask,
 	.has_reset	= true,
+};
+
+static const struct sun4i_codec_quirks sun50i_r329_codec_quirks = {
+	.regmap_config	= &sun50i_r329_codec_regmap_config,
+	.codec		= &sun50i_r329_codec_codec,
+	.create_card	= sun50i_r329_codec_create_card,
+	.reg_fields	= {
+		REG_FIELD(SUN50I_R329_CODEC_DAC_FIFOC, 0, 31),
+		REG_FIELD(SUN50I_R329_CODEC_ADC_FIFOC, 0, 31),
+		REG_FIELD(SUN50I_R329_CODEC_ADC_FIFOC,
+			  SUN50I_R329_CODEC_ADC_FIFOC_ADC_DRQ_EN,
+			  SUN50I_R329_CODEC_ADC_FIFOC_ADC_DRQ_EN),
+		REG_FIELD(SUN50I_R329_CODEC_ADC_FIFOC,
+			  SUN50I_R329_CODEC_ADC_FIFOC_RX_TRIG_LEVEL,
+			  SUN50I_R329_CODEC_ADC_FIFOC_RX_TRIG_LEVEL + 7),
+		REG_FIELD(SUN50I_R329_CODEC_ADC_FIFOC,
+			  SUN50I_R329_CODEC_ADC_FIFOC_RX_SAMPLE_BITS,
+			  SUN50I_R329_CODEC_ADC_FIFOC_RX_SAMPLE_BITS),
+	},
+	.reg_dac_txdata	= SUN8I_H3_CODEC_DAC_TXDATA,
+	.reg_adc_rxdata	= SUN50I_R329_CODEC_ADC_RXDATA,
+	.has_reset	= true,
+	.has_dual_module_clock = true,
+	.set_capture_channel_mask = sun50i_r329_codec_set_capture_channel_mask,
 };
 
 static const struct of_device_id sun4i_codec_of_match[] = {
@@ -1690,6 +1919,10 @@ static const struct of_device_id sun4i_codec_of_match[] = {
 		.compatible = "allwinner,sun8i-v3s-codec",
 		.data = &sun8i_v3s_codec_quirks,
 	},
+	{
+		.compatible = "allwinner,sun50i-r329-codec",
+		.data = &sun50i_r329_codec_quirks,
+	},
 	{}
 };
 MODULE_DEVICE_TABLE(of, sun4i_codec_of_match);
@@ -1702,6 +1935,7 @@ static int sun4i_codec_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *base;
 	int ret;
+	struct regmap_field *regmap_fields_bulk[5];
 
 	scodec = devm_kzalloc(&pdev->dev, sizeof(*scodec), GFP_KERNEL);
 	if (!scodec)
@@ -1718,6 +1952,7 @@ static int sun4i_codec_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Failed to determine the quirks to use\n");
 		return -ENODEV;
 	}
+	scodec->quirks = quirks;
 
 	scodec->regmap = devm_regmap_init_mmio(&pdev->dev, base,
 					       quirks->regmap_config);
@@ -1733,10 +1968,24 @@ static int sun4i_codec_probe(struct platform_device *pdev)
 		return PTR_ERR(scodec->clk_apb);
 	}
 
-	scodec->clk_module = devm_clk_get(&pdev->dev, "codec");
-	if (IS_ERR(scodec->clk_module)) {
-		dev_err(&pdev->dev, "Failed to get the module clock\n");
-		return PTR_ERR(scodec->clk_module);
+	if (quirks->has_dual_module_clock) {
+		scodec->clk_module = devm_clk_get(&pdev->dev, "adc");
+		if (IS_ERR(scodec->clk_module)) {
+			dev_err(&pdev->dev, "Failed to get the ADC module clock\n");
+			return PTR_ERR(scodec->clk_module);
+		}
+
+		scodec->clk_module_dac = devm_clk_get(&pdev->dev, "dac");
+		if (IS_ERR(scodec->clk_module_dac)) {
+			dev_err(&pdev->dev, "Failed to get the DAC module clock\n");
+			return PTR_ERR(scodec->clk_module_dac);
+		}
+	} else {
+		scodec->clk_module = devm_clk_get(&pdev->dev, "codec");
+		if (IS_ERR(scodec->clk_module)) {
+			dev_err(&pdev->dev, "Failed to get the module clock\n");
+			return PTR_ERR(scodec->clk_module);
+		}
 	}
 
 	if (quirks->has_reset) {
@@ -1758,15 +2007,20 @@ static int sun4i_codec_probe(struct platform_device *pdev)
 	}
 
 	/* reg_field setup */
-	scodec->reg_adc_fifoc = devm_regmap_field_alloc(&pdev->dev,
-							scodec->regmap,
-							quirks->reg_adc_fifoc);
-	if (IS_ERR(scodec->reg_adc_fifoc)) {
-		ret = PTR_ERR(scodec->reg_adc_fifoc);
+	ret = devm_regmap_field_bulk_alloc(&pdev->dev, scodec->regmap,
+					   regmap_fields_bulk,
+					   quirks->reg_fields,
+					   ARRAY_SIZE(quirks->reg_fields));
+	if (ret) {
 		dev_err(&pdev->dev, "Failed to create regmap fields: %d\n",
 			ret);
 		return ret;
 	}
+	scodec->reg_dac_fifoc = regmap_fields_bulk[0];
+	scodec->reg_adc_fifoc = regmap_fields_bulk[1];
+	scodec->adc_fifoc_drq_en = regmap_fields_bulk[2];
+	scodec->adc_fifoc_trig_level = regmap_fields_bulk[3];
+	scodec->adc_fifoc_sample_bits = regmap_fields_bulk[4];
 
 	/* Enable the bus clock */
 	if (clk_prepare_enable(scodec->clk_apb)) {
