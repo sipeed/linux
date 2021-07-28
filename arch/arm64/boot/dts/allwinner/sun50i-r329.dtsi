@@ -369,6 +369,26 @@
 			#interrupt-cells = <3>;
 		};
 
+		codec: codec@7032000 {
+			#sound-dai-cells = <0>;
+			compatible = "allwinner,sun50i-r329-codec";
+			reg = <0x07032000 0x300>;
+			interrupts = <GIC_SPI 96 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&r_ccu CLK_R_BUS_CODEC>, <&r_ccu CLK_R_CODEC_DAC>, <&r_ccu CLK_R_CODEC_ADC>;
+			clock-names = "apb", "dac", "adc";
+			resets = <&r_ccu RST_R_BUS_CODEC>;
+			dmas = <&dma 6>, <&dma 6>;
+			dma-names = "rx", "tx";
+			allwinner,codec-analog-controls = <&codec_analog>;
+			status = "disabled";
+		};
+
+		codec_analog: codec-analog@7032300 {
+			compatible = "allwinner,sun50i-r329-codec-analog";
+			reg = <0x07032300 0xd00>;
+			status = "disabled";
+		};
+
 		rtc: rtc@7090000 {
 			compatible = "allwinner,sun50i-r329-rtc";
 			reg = <0x07090000 0x400>;
