@@ -6,6 +6,7 @@
 #include "sun50i-r329-maix-iia.dtsi"
 
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/pwm/pwm.h>
 
 / {
 	model = "Sipeed MaixSense";
@@ -19,6 +20,13 @@
 
 	chosen {
 		stdout-path = "serial0:115200n8";
+	};
+
+	backlight: backlight {
+		compatible = "pwm-backlight";
+		pwms = <&pwm 4 50000 PWM_POLARITY_INVERTED>;
+		brightness-levels = <0 16 18 20 22 24 26 29 32 35 38 42 46 51 56 62 68 75 83 91 100>;
+		default-brightness-level = <15>;
 	};
 };
 
@@ -86,6 +94,12 @@
 	status = "okay";
 };
 
+&pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pwm4_ph6>;
+	status = "okay";
+};
+
 &spi1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi1_cs_ph0>, <&spi1_clk_ph1>, <&spi1_mosi_ph2>;
@@ -98,6 +112,7 @@
 		spi-max-frequency = <30000000>;
 		dc-gpios = <&pio 7 4 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&r_pio 2 21 GPIO_ACTIVE_HIGH>;
+		backlight = <&backlight>;
 	};
 };
 
