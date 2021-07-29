@@ -369,6 +369,15 @@
 			#interrupt-cells = <3>;
 		};
 
+		lradc: lradc@7030800 {
+			compatible = "allwinner,sun50i-r329-lradc";
+			reg = <0x07030800 0x400>;
+			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&r_ccu CLK_R_BUS_LRADC>;
+			resets = <&r_ccu RST_R_BUS_LRADC>;
+			status = "disabled";
+		};
+
 		codec: codec@7032000 {
 			#sound-dai-cells = <0>;
 			compatible = "allwinner,sun50i-r329-codec";
