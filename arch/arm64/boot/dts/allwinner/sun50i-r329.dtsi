@@ -117,6 +117,11 @@
 				function = "mmc1_d3";
 			};
 
+			pwm4_ph6: pwm4-ph6 {
+				pins = "PH6";
+				function = "pwm";
+			};
+
 			spi1_cs_ph0: spi1-cs-ph0 {
 				pins = "PH0";
 				function = "spi1";
