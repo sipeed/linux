@@ -6,6 +6,7 @@
 #include "sun50i-r329-maix-iia.dtsi"
 
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
 #include <dt-bindings/pwm/pwm.h>
 
 / {
@@ -27,6 +28,35 @@
 		pwms = <&pwm 4 50000 PWM_POLARITY_INVERTED>;
 		brightness-levels = <0 16 18 20 22 24 26 29 32 35 38 42 46 51 56 62 68 75 83 91 100>;
 		default-brightness-level = <15>;
+	};
+
+	leds {
+		compatible = "pwm-leds";
+
+		led-1 {
+			color = <LED_COLOR_ID_RED>;
+	                function = LED_FUNCTION_INDICATOR;
+			function-enumerator = <1>;
+			pwms = <&pwm 0 50000 PWM_POLARITY_INVERTED>;
+			max-brightness = <255>;
+			linux,default-trigger = "heartbeat";
+		};
+
+		led-2 {
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_INDICATOR;
+			function-enumerator = <2>;
+			pwms = <&pwm 1 50000 PWM_POLARITY_INVERTED>;
+			max-brightness = <255>;
+		};
+
+		led-3 {
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_INDICATOR;
+			function-enumerator = <3>;
+			pwms = <&pwm 2 50000 PWM_POLARITY_INVERTED>;
+			max-brightness = <255>;
+		};
 	};
 };
 
@@ -96,7 +126,7 @@
 
 &pwm {
 	pinctrl-names = "default";
-	pinctrl-0 = <&pwm4_ph6>;
+	pinctrl-0 = <&pwm0_pb0>, <&pwm1_pb1>, <&pwm2_pb2>, <&pwm4_ph6>;
 	status = "okay";
 };
 
