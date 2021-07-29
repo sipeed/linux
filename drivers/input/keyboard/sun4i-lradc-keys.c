@@ -14,6 +14,7 @@
  * there are no boards known to use channel 1.
  */
 
+#include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/input.h>
@@ -23,6 +24,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/regulator/consumer.h>
+#include <linux/reset.h>
 #include <linux/slab.h>
 
 #define LRADC_CTRL		0x00
@@ -58,10 +60,12 @@
 /* struct lradc_variant - Describe sun4i-a10-lradc-keys hardware variant
  * @divisor_numerator:		The numerator of lradc Vref internally divisor
  * @divisor_denominator:	The denominator of lradc Vref internally divisor
+ * @has_bus_gate_reset:		Whether the LRADC hardware has bus gate/reset
  */
 struct lradc_variant {
 	u8 divisor_numerator;
 	u8 divisor_denominator;
+	bool has_bus_gate_reset;
 };
 
 static const struct lradc_variant lradc_variant_a10 = {
@@ -74,6 +78,12 @@ static const struct lradc_variant r_lradc_variant_a83t = {
 	.divisor_denominator = 4
 };
 
+static const struct lradc_variant lradc_variant_r329 = {
+	.divisor_numerator = 3,
+	.divisor_denominator = 4,
+	.has_bus_gate_reset = true,
+};
+
 struct sun4i_lradc_keymap {
 	u32 voltage;
 	u32 keycode;
@@ -84,6 +94,8 @@ struct sun4i_lradc_data {
 	struct input_dev *input;
 	void __iomem *base;
 	struct regulator *vref_supply;
+	struct clk *bus_clk;
+	struct reset_control *bus_rst;
 	struct sun4i_lradc_keymap *chan0_map;
 	const struct lradc_variant *variant;
 	u32 chan0_map_count;
@@ -140,6 +152,16 @@ static int sun4i_lradc_open(struct input_dev *dev)
 	if (error)
 		return error;
 
+	if (lradc->variant->has_bus_gate_reset) {
+		error = reset_control_deassert(lradc->bus_rst);
+		if (error)
+			return error;
+
+		error = clk_prepare_enable(lradc->bus_clk);
+		if (error)
+			return error;
+	}
+
 	lradc->vref = regulator_get_voltage(lradc->vref_supply) *
 		      lradc->variant->divisor_numerator /
 		      lradc->variant->divisor_denominator;
@@ -163,6 +185,11 @@ static void sun4i_lradc_close(struct input_dev *dev)
 	writel(FIRST_CONVERT_DLY(2) | LEVELA_B_CNT(1) | HOLD_EN(1) |
 		SAMPLE_RATE(2), lradc->base + LRADC_CTRL);
 	writel(0, lradc->base + LRADC_INTC);
+
+	if (lradc->variant->has_bus_gate_reset) {
+		clk_disable_unprepare(lradc->bus_clk);
+		reset_control_assert(lradc->bus_rst);
+	}
 
 	regulator_disable(lradc->vref_supply);
 }
@@ -272,6 +299,16 @@ static int sun4i_lradc_probe(struct platform_device *pdev)
 	if (IS_ERR(lradc->base))
 		return PTR_ERR(lradc->base);
 
+	if (lradc->variant->has_bus_gate_reset) {
+		lradc->bus_clk = devm_clk_get(dev, NULL);
+		if (IS_ERR(lradc->bus_clk))
+			return PTR_ERR(lradc->bus_clk);
+
+		lradc->bus_rst = devm_reset_control_get(dev, NULL);
+		if (IS_ERR(lradc->bus_rst))
+			return PTR_ERR(lradc->bus_rst);
+	}
+
 	error = devm_request_irq(dev, platform_get_irq(pdev, 0),
 				 sun4i_lradc_irq, 0,
 				 "sun4i-a10-lradc-keys", lradc);
@@ -290,6 +327,8 @@ static const struct of_device_id sun4i_lradc_of_match[] = {
 		.data = &lradc_variant_a10 },
 	{ .compatible = "allwinner,sun8i-a83t-r-lradc",
 		.data = &r_lradc_variant_a83t },
+	{ .compatible = "allwinner,sun50i-r329-lradc",
+		.data = &lradc_variant_r329 },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, sun4i_lradc_of_match);
