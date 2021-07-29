@@ -15,6 +15,7 @@ properties:
     oneOf:
       - const: allwinner,sun4i-a10-lradc-keys
       - const: allwinner,sun8i-a83t-r-lradc
+      - const: allwinner,sun50i-r329-lradc
       - items:
           - const: allwinner,sun50i-a64-lradc
           - const: allwinner,sun8i-a83t-r-lradc
@@ -28,6 +29,26 @@ properties:
   vref-supply:
     description:
       Regulator for the LRADC reference voltage
+
+if:
+  properties:
+    compatible:
+      const: allwinner,sun50i-r329-lradc
+then:
+  properties:
+    clocks:
+      description:
+        Bus clock gate for LRADC.
+      maxItems: 1
+
+    resets:
+      description:
+        Bus reset for LRADC.
+      maxItems: 1
+
+    required:
+      - clocks
+      - resets
 
 patternProperties:
   "^button-[0-9]+$":
