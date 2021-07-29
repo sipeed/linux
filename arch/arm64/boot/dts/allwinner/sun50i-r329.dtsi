@@ -133,6 +133,16 @@
 			};
 		};
 
+		pwm: pwm@2000c00 {
+			compatible = "allwinner,sun50i-r329-pwm";
+			reg = <0x02000c00 0x400>;
+			clocks = <&ccu CLK_BUS_PWM>, <&osc24M>;
+			clock-names = "bus", "hosc";
+			resets = <&ccu RST_BUS_PWM>;
+			allwinner,pwm-channels = <9>;
+			#pwm-cells = <3>;
+		};
+
 		ccu: clock@2001000 {
 			compatible = "allwinner,sun50i-r329-ccu";
 			reg = <0x02001000 0x1000>;
