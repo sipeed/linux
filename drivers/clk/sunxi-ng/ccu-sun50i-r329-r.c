@@ -98,10 +98,10 @@ static SUNXI_CCU_M(pll_audio0_div5_clk, "pll-audio0-div5", "pll-audio0",
  */
 #define SUN50I_R329_PLL_AUDIO1_REG	0x1030
 static struct ccu_sdm_setting pll_audio1_4x_sdm_table[] = {
-	{ .rate = 22579200, .pattern = 0xc001288d, .m = 12, .n = 22 },
-	{ .rate = 24576000, .pattern = 0xc00126e9, .m = 12, .n = 24 },
-	{ .rate = 90316800, .pattern = 0xc001288d, .m = 3, .n = 22 },
-	{ .rate = 98304000, .pattern = 0xc00126e9, .m = 3, .n = 24 },
+	{ .rate = 45158400, .pattern = 0xc001288d, .m = 12, .n = 22 },
+	{ .rate = 49152000, .pattern = 0xc00126e9, .m = 12, .n = 24 },
+	{ .rate = 180633600, .pattern = 0xc001288d, .m = 3, .n = 22 },
+	{ .rate = 196608000, .pattern = 0xc00126e9, .m = 3, .n = 24 },
 };
 static struct ccu_nm pll_audio1_4x_clk = {
 	.enable		= BIT(31),
