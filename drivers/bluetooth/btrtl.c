@@ -672,6 +672,12 @@ out_free:
 		}
 		btrtl_dev->cfg_len = rtl_load_file(hdev, cfg_name,
 						   &btrtl_dev->cfg_data);
+		if (postfix && btrtl_dev->cfg_len) {
+			snprintf(cfg_name, sizeof(cfg_name), "%s.bin",
+				 btrtl_dev->ic_info->cfg_name);
+			btrtl_dev->cfg_len = rtl_load_file(hdev, cfg_name,
+							&btrtl_dev->cfg_data);
+		}
 		if (btrtl_dev->ic_info->config_needed &&
 		    btrtl_dev->cfg_len <= 0) {
 			rtl_dev_err(hdev, "mandatory config file %s not found",
