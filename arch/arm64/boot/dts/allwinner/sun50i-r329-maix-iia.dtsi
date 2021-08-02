@@ -31,6 +31,21 @@
 	vref-supply = <&reg_vcc1v8>;
 };
 
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pg_pins>, <&uart1_pg_rts_cts_pins>;
+	uart-has-rtscts;
+	status = "okay";
+
+	bluetooth {
+		compatible = "realtek,rtl8723ds-bt";
+		device-wake-gpios = <&r_pio 1 1 GPIO_ACTIVE_HIGH>; /* PM1 */
+		host-wake-gpios = <&r_pio 1 3 GPIO_ACTIVE_HIGH>; /* PM3 */
+		enable-gpios = <&r_pio 1 2 GPIO_ACTIVE_HIGH>; /* PM2 */
+		max-speed = <1500000>;
+	};
+};
+
 &mmc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&mmc1_clk_pg0>, <&mmc1_cmd_pg1>, <&mmc1_d0_pg2>,
