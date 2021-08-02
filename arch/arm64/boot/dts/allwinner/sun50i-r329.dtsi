@@ -116,6 +116,21 @@
 				pins = "PG5";
 				function = "mmc1_d3";
 			};
+
+			spi1_cs_ph0: spi1-cs-ph0 {
+				pins = "PH0";
+				function = "spi1";
+			};
+
+			spi1_clk_ph1: spi1-clk-ph1 {
+				pins = "PH1";
+				function = "spi1";
+			};
+
+			spi1_mosi_ph2: spi1-mosi-ph2 {
+				pins = "PH2";
+				function = "spi1";
+			};
 		};
 
 		ccu: clock@2001000 {
