@@ -446,6 +446,8 @@
 			dmas = <&dma 6>, <&dma 6>;
 			dma-names = "rx", "tx";
 			allwinner,codec-analog-controls = <&codec_analog>;
+			assigned-clocks = <&r_ccu CLK_PLL_AUDIO1>;
+			assigned-clock-rates = <22579200>;
 			status = "disabled";
 		};
 
