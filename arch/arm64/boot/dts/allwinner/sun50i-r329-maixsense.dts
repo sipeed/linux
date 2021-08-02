@@ -38,6 +38,36 @@
 	status = "okay";
 };
 
+&spi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1_cs_ph0>, <&spi1_clk_ph1>, <&spi1_mosi_ph2>;
+
+	status = "okay";
+
+	lcd: lcd@0 {
+		compatible = "zsx,zsx154-b1206", "panel-mipi-dbi-spi";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+		dc-gpios = <&pio 7 4 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&r_pio 2 21 GPIO_ACTIVE_HIGH>;
+		write-only;
+		width-mm = <28>;
+		height-mm = <28>;
+
+		panel-timing {
+			hactive = <240>;
+			vactive = <240>;
+			hback-porch = <0>;
+			vback-porch = <0>;
+			clock-frequency = <0>;
+			hfront-porch = <0>;
+			hsync-len = <0>;
+			vfront-porch = <0>;
+			vsync-len = <0>;
+		};
+	};
+};
+
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_pb_pins>;
