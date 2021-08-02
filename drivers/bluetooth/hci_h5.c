@@ -791,6 +791,7 @@ static int h5_serdev_probe(struct serdev_device *serdev)
 {
 	struct device *dev = &serdev->dev;
 	struct h5 *h5;
+	struct device_node *root;
 
 	h5 = devm_kzalloc(dev, sizeof(*h5), GFP_KERNEL);
 	if (!h5)
@@ -821,6 +822,32 @@ static int h5_serdev_probe(struct serdev_device *serdev)
 			return -ENODEV;
 
 		h5->vnd = (const struct h5_vnd *)data;
+
+		/* Set id to the first string of the machine compatible prop */
+		root = of_find_node_by_path("/");
+		if (root) {
+			int i, len;
+			char *id;
+			const char *tmp;
+
+			of_property_read_string_index(root, "compatible", 0,
+						      &tmp);
+
+			/*
+			 * get rid of '/' in the compatible string to be able
+			 * to find the FW
+			 */
+			len = strlen(tmp) + 1;
+			id = devm_kzalloc(dev, len, GFP_KERNEL);
+			strscpy(id, tmp, len);
+			for (i = 0; i < id[i]; i++) {
+				if (id[i] == '/')
+					id[i] = '-';
+			}
+			h5->id = id;
+
+			of_node_put(root);
+		}
 	}
 
 
