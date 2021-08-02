@@ -38,6 +38,21 @@
 	status = "okay";
 };
 
+&spi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1_cs_ph0>, <&spi1_clk_ph1>, <&spi1_mosi_ph2>;
+
+	status = "okay";
+
+	lcd: lcd@0 {
+		compatible = "zsx,zsx154-b1206";
+		reg = <0>;
+		spi-max-frequency = <30000000>;
+		dc-gpios = <&pio 7 4 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&r_pio 2 21 GPIO_ACTIVE_HIGH>;
+	};
+};
+
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_pb_pins>;
