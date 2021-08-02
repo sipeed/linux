@@ -19,7 +19,9 @@
 #define CLK_PLL_AUDIO0_DIV5	7
 #define CLK_PLL_AUDIO1_4X	8
 #define CLK_PLL_AUDIO1_2X	9
-#define CLK_PLL_AUDIO1		10
+
+/* PLL-AUDIO1 exported for assigning clock */
+
 #define CLK_R_AHB		11
 
 /* R_APB1 exported for PIO */

@@ -6,6 +6,8 @@
 #ifndef _DT_BINDINGS_CLK_SUN50I_R329_R_CCU_H_
 #define _DT_BINDINGS_CLK_SUN50I_R329_R_CCU_H_
 
+#define CLK_PLL_AUDIO1		10
+
 #define CLK_R_APB1		12
 
 #define CLK_R_BUS_GPADC		14
