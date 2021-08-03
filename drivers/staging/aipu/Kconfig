@@ -1,0 +1,6 @@
+config ZHOUYI_AIPU
+	tristate "Zhouyi AIPU support"
+	depends on OF_IRQ
+	depends on OF_RESERVED_MEM
+	help
+	  Driver for Zhouyi AIPU.

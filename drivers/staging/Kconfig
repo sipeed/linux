@@ -88,4 +88,6 @@ source "drivers/staging/qlge/Kconfig"
 
 source "drivers/staging/wfx/Kconfig"
 
+source "drivers/staging/aipu/Kconfig"
+
 endif # STAGING
