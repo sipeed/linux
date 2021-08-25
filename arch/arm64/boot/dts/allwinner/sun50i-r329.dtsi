@@ -414,6 +414,11 @@
 			#gpio-cells = <3>;
 			interrupt-controller;
 			#interrupt-cells = <3>;
+
+			r_uart_pins: r-uart-pins {
+				pins = "PL8", "PL9";
+				function = "s_uart";
+			};
 		};
 
 		ths: thermal-sensor@7030400 {
@@ -454,6 +459,19 @@
 		codec_analog: codec-analog@7032300 {
 			compatible = "allwinner,sun50i-r329-codec-analog";
 			reg = <0x07032300 0xd00>;
+			status = "disabled";
+		};
+
+		r_uart: serial@7080000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x07080000 0x400>;
+			interrupts = <GIC_SPI 111 IRQ_TYPE_LEVEL_HIGH>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			clocks = <&r_ccu CLK_R_BUS_UART>;
+			resets = <&r_ccu RST_R_BUS_UART>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&r_uart_pins>;
 			status = "disabled";
 		};
 
