@@ -178,6 +178,12 @@
 				pins = "PH2";
 				function = "spi1";
 			};
+
+			i2c1_ph_pins: i2c1-ph-pins {
+				pins = "PH8","PH9";
+				function = "i2c1";
+			};
+
 		};
 
 		pwm: pwm@2000c00 {
@@ -362,6 +368,19 @@
 			resets = <&ccu RST_BUS_SPI1>;
 			dmas = <&dma 23>, <&dma 23>;
 			dma-names = "rx", "tx";
+			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@2502400{
+			compatible = "allwinner,sun6i-a31-i2c";
+			reg = <0x02502400 0x400>;
+			interrupts = <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&ccu CLK_BUS_I2C1>;
+			resets = <&ccu RST_BUS_I2C1>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c1_ph_pins>;
 			status = "disabled";
 			#address-cells = <1>;
 			#size-cells = <0>;
