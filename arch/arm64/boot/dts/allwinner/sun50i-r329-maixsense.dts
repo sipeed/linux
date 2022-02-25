@@ -16,7 +16,9 @@
 
 	aliases {
 		serial0 = &uart0;
+		serial1 = &r_uart;
 		mmc0 = &mmc0;
+		i2c1 = &i2c1;
 	};
 
 	chosen {
@@ -152,6 +154,10 @@
 	status = "okay";
 };
 
+&r_uart{
+	status = "okay";
+};
+
 &usb_otg {
 	dr_mode = "otg";
 	status = "okay";
@@ -160,4 +166,8 @@
 &usbphy {
 	usb0_id_det-gpios = <&pio 1 3 GPIO_ACTIVE_HIGH>; /* PB3 */
 	status = "okay";
+};
+
+&i2c1 {
+	status="okay";
 };
