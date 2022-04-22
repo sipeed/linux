@@ -66,6 +66,7 @@ properties:
     items:
       - enum:
           - sainsmart18
+          - zsx,zsx154-b1206
       - const: panel-mipi-dbi-spi
 
   write-only:
