@@ -154,6 +154,16 @@
 				function = "pwm";
 			};
 
+			pwm7_pb7: pwm7-pb7 {
+				pins = "PB7";
+				function = "pwm";
+			};
+
+			pwm8_pb8: pwm8-pb8 {
+				pins = "PB8";
+				function = "pwm";
+			};
+
 			spi1_cs_ph0: spi1-cs-ph0 {
 				pins = "PH0";
 				function = "spi1";

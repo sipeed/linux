@@ -128,7 +128,7 @@
 
 &pwm {
 	pinctrl-names = "default";
-	pinctrl-0 = <&pwm0_pb0>, <&pwm1_pb1>, <&pwm2_pb2>, <&pwm4_ph6>;
+	pinctrl-0 = <&pwm0_pb0>, <&pwm1_pb1>, <&pwm2_pb2>, <&pwm4_ph6>, <&pwm7_pb7>, <&pwm8_pb8>;
 	status = "okay";
 };
 
